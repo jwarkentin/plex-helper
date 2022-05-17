@@ -15,11 +15,6 @@ import isValidFilename from 'valid-filename'
 
 const config = _.merge({}, baseConfig, overrideConfig)
 
-// Lower case names assist in quick lookups
-for (const section in config.libraryDataPaths) {
-  config.libraryDataPaths[section.toLowerCase()] = config.libraryDataPaths[section]
-}
-
 const plexRequest = axios.create({
   baseURL: `http://${config.plexHost}:${config.plexPort}/`,
   headers: {
@@ -33,12 +28,12 @@ const request = _.flow(plexRequest, async (futureResponse) => {
   return result?.data
 })
 
-let sections = {}
+let sectionsByTitle = {}
 let updateTimeout
 async function updateSections() {
   clearTimeout(updateTimeout)
   try {
-    sections = _.fromPairs(
+    sectionsByTitle = _.fromPairs(
       (await request("/library/sections"))?.MediaContainer.Directory.map(section => {
         return [ section.title.toLowerCase(), section ]
       })
@@ -49,14 +44,18 @@ async function updateSections() {
     updateTimeout = setTimeout(updateSections, config.sectionsRefreshErrorRetryInterval * 1000).unref()
   }
 }
-await updateSections()
+updateSections()
 
-function getSectionId(section) {
-  section = section.toLowerCase()
-  return sections[section]?.key
+function getSectionInfo(sectionTitle) {
+  const sectionInfo = sectionsByTitle[sectionTitle.toLowerCase()]
+  if (!sectionInfo) {
+    throw new Error(`Invalid section name "${sectionTitle}"`)
+  }
+  return sectionInfo
 }
 
-function getLibraryMediaPath(section, media) {
+function getLibraryMediaPath(sectionInfo, query) {
+  const { media, season } = query
   if (!media) {
     return undefined
   }
@@ -65,12 +64,25 @@ function getLibraryMediaPath(section, media) {
     throw new Error(`"${media}" is not a valid media title`)
   }
 
-  const secPaths = config.libraryDataPaths
-  if (secPaths[section]) {
-    return `${secPaths[section]}/${media}`
+  const secPath = sectionInfo.Location[0]?.path
+  if (!secPath) {
+    throw new Error(`Could not determine the filesystem path for the "${sectionInfo.title}" section`)
   }
 
-  throw new Error(`No data path has been configured for section "${section}"`)
+  let mediaPath = `${secPath}/${media}`
+  if (season) {
+    if (!/\d+/.test(season)) {
+      throw new Error(`"${season}" is not a valid season number`)
+    }
+
+    if (sectionInfo.type !== "show") {
+      throw new Error(`"season" is not a valid parameter for this library section`)
+    }
+
+    mediaPath += `/Season ${season.padStart(2, "0")}`
+  }
+
+  return mediaPath
 }
 
 
@@ -79,21 +91,27 @@ const router = express.Router()
 
 router.get("/refresh/:section", async (req, res, next) => {
   try {
+    const sectionInfo = getSectionInfo(req.params.section)
+    if (!sectionInfo) {
+      throw new Error(`There is no section named "${req.params.section}"`)
+    }
+
     const params = {
-      path: getLibraryMediaPath(req.params.section, req.query.media)
+      path: getLibraryMediaPath(sectionInfo, req.query)
     }
 
     const resp = await request({
-      url: `/library/sections/${getSectionId(req.params.section)}/refresh`,
+      url: `/library/sections/${sectionInfo.key}/refresh`,
       params
     })
-    res.send("Refresh started. It may take some time.")
+
+    res.send("Refresh started. It may take some time to complete.")
   } catch (err) {
     res.status(500).send(`Error requesting refresh: ${err.message}`)
   }
 })
 
-app.use(config.basePath, router)
+app.use(config.baseRoute, router)
 
 app.listen(config.listenPort, () => {
   console.log(`Listening on port ${config.listenPort}`)
