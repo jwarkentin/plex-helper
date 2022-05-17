@@ -1,0 +1,18 @@
+{
+  "name": "plex-helper",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "Justin Warkentin",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^0.27.2",
+    "express": "^4.18.1",
+    "lodash": "^4.17.21",
+    "valid-filename": "^4.0.0"
+  }
+}

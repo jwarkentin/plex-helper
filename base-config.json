@@ -1,0 +1,10 @@
+{
+  "plexToken": "",
+  "listenPort": "3000",
+  "plexHost": "127.0.0.1",
+  "plexPort": 32400,
+  "basePath": "/plex",
+  "sectionsRefreshInterval": 86400,
+  "sectionsRefreshErrorRetryInterval": 60,
+  "libraryDataPaths": {}
+}
